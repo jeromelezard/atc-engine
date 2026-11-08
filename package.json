@@ -1,0 +1,10 @@
+{
+    "scripts": {
+        "run": "npx tsx src/app.ts",
+        "test": "vitest"
+    },
+    "devDependencies": {
+        "typescript": "^7.0.2",
+        "vitest": "^4.1.12"
+    }
+}

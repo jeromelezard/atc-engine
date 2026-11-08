@@ -1,0 +1,13 @@
+export interface Observation {
+    icao24: string;
+    timestamp: number;
+    latitude: number;
+    longitude: number;
+    altitude: number | null;
+    velocity: number | null;
+    heading: number | null;
+}
+
+export interface TrackedObservations {
+    [icao24: string]: Observation[];
+}
