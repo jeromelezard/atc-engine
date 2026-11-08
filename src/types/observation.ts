@@ -11,3 +11,8 @@ export interface Observation {
 export interface TrackedObservations {
     [icao24: string]: Observation[];
 }
+
+export interface Coordinates {
+    latitude: number;
+    longitude: number;
+}

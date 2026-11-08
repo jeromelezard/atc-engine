@@ -1,4 +1,4 @@
-import type { Observation, TrackedObservations } from "../types/observation";
+import type { Coordinates, Observation, TrackedObservations } from "../types/observation";
 
 export function parseObservation(input: unknown): Observation | null {
     if (input === null || typeof input !== "object" || Array.isArray(input)) {
@@ -71,13 +71,68 @@ export function detectDuplicate(observation: Observation, trackedFlights: Tracke
     return isDuplicate;
 }
 
-export function track(observation: Observation, trackedFlights: TrackedObservations): void {
+export function track(observation: Observation, trackedFlights: TrackedObservations, flaggedObservations: TrackedObservations): void {
     const history = (trackedFlights[observation.icao24] ??= []);
+    const flaggedHistory = (flaggedObservations[observation.icao24] ??= []);
     const insertAt = history.findIndex((flight) => observation.timestamp < flight.timestamp);
 
     if (insertAt === -1) {
-        history.push(observation);
+        if (history.length == 0) {
+            history.push(observation);
+            return;
+        }
+
+        if (validateFlightMovement(history[history.length - 1], observation)) {
+            history.push(observation);
+        } else {
+            flaggedHistory.push(observation);
+        }
     } else {
-        history.splice(insertAt, 0, observation);
+        const previousObservation = history[insertAt - 1];
+        if (validateFlightMovement(previousObservation, observation)) {
+            history.splice(insertAt, 0, observation);
+        } else {
+            flaggedHistory.push(observation);
+        }
     }
+}
+
+export function validateFlightMovement(previousObservation: Observation | undefined, observation: Observation) {
+    if (!previousObservation) return true;
+
+    const observationDistance = haversineFormula(
+        { latitude: previousObservation.latitude, longitude: previousObservation.longitude },
+        { latitude: observation.latitude, longitude: observation.longitude },
+    );
+
+    const observationTimeDifference = observation.timestamp - previousObservation.timestamp;
+
+    const velocity = observationDistance / observationTimeDifference;
+
+    if (velocity > 350) return false;
+    return true;
+}
+
+export function haversineFormula(pointA: Coordinates, pointB: Coordinates) {
+    const r = 6371;
+
+    const distance =
+        2 *
+        r *
+        Math.asin(
+            Math.sqrt(
+                Math.sin(degToRad((pointB.latitude - pointA.latitude) / 2)) ** 2 +
+                    Math.cos(degToRad(pointA.latitude)) *
+                        Math.cos(degToRad(pointB.latitude)) *
+                        Math.sin(degToRad((pointB.longitude - pointA.longitude) / 2)) ** 2,
+            ),
+        );
+
+    console.log(distance, " test");
+
+    return Math.round(distance * 1000);
+}
+
+function degToRad(deg: number) {
+    return deg * (Math.PI / 180);
 }

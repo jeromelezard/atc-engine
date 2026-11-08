@@ -154,19 +154,6 @@ describe("Observation Tests", () => {
         const invalidObservations = trackObservations([null, [], 10, false, "test"]).invalidObservations;
         expect(invalidObservations).toEqual([null, [], 10, false, "test"]);
     });
-
-    // it("should track multiple flights", () => {
-    //     const multipleFlightObservations: Observation[] = [
-    //         ...observations,
-    //         makeObservation({ icao24: "30653F", timestamp: 100 }),
-    //         makeObservation({ icao24: "30653F", timestamp: 200 }),
-    //         makeObservation({ icao24: "97864T", timestamp: 150 }),
-    //         makeObservation({ icao24: "30653F", timestamp: 250 }),
-    //     ];
-    //     const trackedObservations = trackObservations(multipleFlightObservations);
-    //     expect(trackedObservations.trackedFlights["30653F"]?.length).toBe(3);
-    //     expect(trackedObservations.trackedFlights["97864T"]?.length).toBe(1);
-    // });
 });
 
 describe("Multiple aircrafts observation tests", () => {
