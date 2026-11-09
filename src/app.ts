@@ -1,6 +1,6 @@
 import { observations } from "./utils/observations";
 import type { TrackedObservations } from "./types/observation";
-import { detectDuplicate, parseObservation, track } from "./utils";
+import { detectDuplicate, evaluateInsertion, parseObservation, track } from "./utils";
 
 export function trackObservations(rawObservations: unknown) {
     const trackedFlights: TrackedObservations = {};
@@ -29,7 +29,11 @@ export function trackObservations(rawObservations: unknown) {
             continue;
         }
 
-        track(observation, trackedFlights, flaggedObservations);
+        const history = trackedFlights[observation.icao24] ??= [];
+
+        const insertionStatus = evaluateInsertion(history, observation)
+
+        track(observation, history, flaggedObservations, insertionStatus);
     }
     return { trackedFlights, invalidObservations, duplicateObservations, conflictingObservations, flaggedObservations };
 }

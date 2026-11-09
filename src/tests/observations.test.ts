@@ -77,18 +77,18 @@ describe("Observation Tests", () => {
     it("should flag conflicting observations", () => {
         const conflictingObservations = [
             makeObservation({ timestamp: 100 }),
-            makeObservation({ timestamp: 200, latitude: 89, longitude: -12 }),
+            makeObservation({ timestamp: 200 }),
             makeObservation({ timestamp: 300 }),
-            makeObservation({ timestamp: 200, latitude: 50, longitude: -60 }),
+            makeObservation({ timestamp: 200, latitude: 51.5, longitude: -0.5, }),
         ];
 
         const trackedObservations = trackObservations(conflictingObservations);
 
-        expect(trackedObservations.trackedFlights["40621D"]).toContainEqual(makeObservation({ timestamp: 200, latitude: 89, longitude: -12 }));
-        expect(trackedObservations.trackedFlights["40621D"]).not.toContainEqual(makeObservation({ timestamp: 200, latitude: 50, longitude: -60 }));
+        expect(trackedObservations.trackedFlights["40621D"]).toContainEqual(makeObservation({ timestamp: 200 }));
+        expect(trackedObservations.trackedFlights["40621D"]).not.toContainEqual(makeObservation({ timestamp: 200, latitude: 51.5, longitude: -0.5 }));
 
         expect(trackedObservations.conflictingObservations["40621D"]).toContainEqual(
-            makeObservation({ timestamp: 200, latitude: 50, longitude: -60 }),
+            makeObservation({ timestamp: 200, latitude: 51.5, longitude: -0.5}),
         );
     });
 
@@ -159,25 +159,31 @@ describe("Observation Tests", () => {
 describe("Multiple aircrafts observation tests", () => {
     it("should track multiple flights", () => {
         const multiAircraftObservations = [
-            makeObservation({ icao24: "40621D", timestamp: 100 }),
-            makeObservation({ icao24: "A1B2C3", timestamp: 100, latitude: 40, longitude: -70 }),
+                // First aircraft — initial observation
+                makeObservation({ icao24: "40621D", timestamp: 100, latitude: 51.47, longitude: -0.45 }),
 
-            makeObservation({ icao24: "40621D", timestamp: 300 }),
-            makeObservation({ icao24: "A1B2C3", timestamp: 200, latitude: 41, longitude: -71 }),
+                // Second aircraft — initial observation
+                makeObservation({ icao24: "A1B2C3", timestamp: 100, latitude: 40, longitude: -70 }),
 
-            // Delayed observation for the first aircraft
-            makeObservation({ icao24: "40621D", timestamp: 200 }),
+                // First aircraft — later observation
+                makeObservation({ icao24: "40621D", timestamp: 300, latitude: 51.51, longitude: -0.41 }),
 
-            // Exact duplicate for the second aircraft
-            makeObservation({ icao24: "A1B2C3", timestamp: 200, latitude: 41, longitude: -71 }),
+                // Second aircraft — later observation
+                makeObservation({ icao24: "A1B2C3", timestamp: 200, latitude: 40.02, longitude: -69.98 }),
 
-            // Same-aircraft timestamp conflict; the earlier position should remain accepted
-            makeObservation({ icao24: "40621D", timestamp: 200, latitude: 52, longitude: -1 }),
+                // Delayed observation for the first aircraft
+                makeObservation({ icao24: "40621D", timestamp: 200, latitude: 51.49, longitude: -0.43 }),
 
-            // Delayed observation for the second aircraft
-            makeObservation({ icao24: "A1B2C3", timestamp: 150, latitude: 40.5, longitude: -70.5 }),
-        ];
+                // Exact duplicate for the second aircraft
+                makeObservation({ icao24: "A1B2C3", timestamp: 200, latitude: 40.02, longitude: -69.98 }),
 
+                // Same-aircraft timestamp conflict
+                // Different position, but same timestamp as an accepted observation
+                makeObservation({ icao24: "40621D", timestamp: 200, latitude: 51.50, longitude: -0.42 }),
+
+                // Delayed observation for the second aircraft
+                makeObservation({ icao24: "A1B2C3", timestamp: 150, latitude: 40.01, longitude: -69.99 }),
+            ];
         const trackedObservations = trackObservations(multiAircraftObservations);
         const trackedFObservations = trackedObservations.trackedFlights;
         const duplicateObservations = trackedObservations.duplicateObservations;

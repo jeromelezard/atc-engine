@@ -1,4 +1,6 @@
-import type { Coordinates, Observation, TrackedObservations } from "../types/observation";
+import type { Coordinates, InsertionDecision, Observation, TrackedObservations } from "../types/observation";
+
+const MAX_SPEED_THRESHOLD = 350;
 
 export function parseObservation(input: unknown): Observation | null {
     if (input === null || typeof input !== "object" || Array.isArray(input)) {
@@ -71,30 +73,30 @@ export function detectDuplicate(observation: Observation, trackedFlights: Tracke
     return isDuplicate;
 }
 
-export function track(observation: Observation, trackedFlights: TrackedObservations, flaggedObservations: TrackedObservations): void {
-    const history = (trackedFlights[observation.icao24] ??= []);
-    const flaggedHistory = (flaggedObservations[observation.icao24] ??= []);
+export function evaluateInsertion(history: readonly Observation[], observation: Observation): InsertionDecision {
+    if (history.length == 0) return {status: "accepted", insertAt: 0}
+
     const insertAt = history.findIndex((flight) => observation.timestamp < flight.timestamp);
 
-    if (insertAt === -1) {
-        if (history.length == 0) {
-            history.push(observation);
-            return;
-        }
+    const index = insertAt == -1 ? history.length : insertAt
 
-        if (validateFlightMovement(history[history.length - 1], observation)) {
-            history.push(observation);
-        } else {
-            flaggedHistory.push(observation);
-        }
+    if (validateFlightMovement(history[index - 1], observation)) {
+        return {status: "accepted", insertAt: insertAt == -1 ? index : insertAt }
     } else {
-        const previousObservation = history[insertAt - 1];
-        if (validateFlightMovement(previousObservation, observation)) {
-            history.splice(insertAt, 0, observation);
-        } else {
-            flaggedHistory.push(observation);
-        }
+        return {status: "flagged", reason: "implausible-speed"}
     }
+   
+}
+
+export function track(observation: Observation, history: Observation[], flaggedObservations: TrackedObservations, insertionStatus: InsertionDecision): void {
+
+    const flaggedHistory = (flaggedObservations[observation.icao24] ??= []);
+
+    if(insertionStatus.status == "accepted") history.splice(insertionStatus.insertAt, 0, observation);
+    if(insertionStatus.status == "flagged") flaggedHistory.push(observation)
+
+    return
+  
 }
 
 export function validateFlightMovement(previousObservation: Observation | undefined, observation: Observation) {
@@ -109,7 +111,8 @@ export function validateFlightMovement(previousObservation: Observation | undefi
 
     const velocity = observationDistance / observationTimeDifference;
 
-    if (velocity > 350) return false;
+    if (velocity > MAX_SPEED_THRESHOLD) return false;
+    
     return true;
 }
 
@@ -127,8 +130,6 @@ export function haversineFormula(pointA: Coordinates, pointB: Coordinates) {
                         Math.sin(degToRad((pointB.longitude - pointA.longitude) / 2)) ** 2,
             ),
         );
-
-    console.log(distance, " test");
 
     return Math.round(distance * 1000);
 }

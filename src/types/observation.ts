@@ -16,3 +16,8 @@ export interface Coordinates {
     latitude: number;
     longitude: number;
 }
+
+
+export type InsertionDecision =
+    | { status: "accepted"; insertAt: number }
+    | { status: "flagged"; reason: "implausible-speed" };
