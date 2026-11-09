@@ -17,7 +17,6 @@ export interface Coordinates {
     longitude: number;
 }
 
+export type InsertionDecision = { status: "accepted"; insertAt: number } | { status: "flagged"; reason: "implausible-speed" };
 
-export type InsertionDecision =
-    | { status: "accepted"; insertAt: number }
-    | { status: "flagged"; reason: "implausible-speed" };
+export type FlightStatuses = Record<string, "ACTIVE" | "STALE">;

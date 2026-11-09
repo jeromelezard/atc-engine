@@ -1,6 +1,7 @@
-import type { Coordinates, InsertionDecision, Observation, TrackedObservations } from "../types/observation";
+import type { Coordinates, FlightStatuses, InsertionDecision, Observation, TrackedObservations } from "../types/observation";
 
 const MAX_SPEED_THRESHOLD = 350;
+export const STALE_THRESHOLD = 60;
 
 export function parseObservation(input: unknown): Observation | null {
     if (input === null || typeof input !== "object" || Array.isArray(input)) {
@@ -74,45 +75,54 @@ export function detectDuplicate(observation: Observation, trackedFlights: Tracke
 }
 
 export function evaluateInsertion(history: readonly Observation[], observation: Observation): InsertionDecision {
-    if (history.length == 0) return {status: "accepted", insertAt: 0}
+    if (history.length == 0) return { status: "accepted", insertAt: 0 };
 
     const insertAt = history.findIndex((flight) => observation.timestamp < flight.timestamp);
 
-    const index = insertAt == -1 ? history.length : insertAt
+    const index = insertAt == -1 ? history.length : insertAt;
 
-    if (validateFlightMovement(history[index - 1], observation)) {
-        return {status: "accepted", insertAt: insertAt == -1 ? index : insertAt }
+    const previous = history[index - 1];
+    const next = history[index];
+    const validFromPrevious = !previous || validateFlightMovementWithNeighbour(previous, observation);
+
+    const validToNext = !next || validateFlightMovementWithNeighbour(observation, next);
+    if (validFromPrevious && validToNext) {
+        return { status: "accepted", insertAt: insertAt == -1 ? index : insertAt };
     } else {
-        return {status: "flagged", reason: "implausible-speed"}
+        return { status: "flagged", reason: "implausible-speed" };
     }
-   
 }
 
-export function track(observation: Observation, history: Observation[], flaggedObservations: TrackedObservations, insertionStatus: InsertionDecision): void {
-
+export function track(
+    observation: Observation,
+    history: Observation[],
+    flaggedObservations: TrackedObservations,
+    insertionStatus: InsertionDecision,
+): void {
     const flaggedHistory = (flaggedObservations[observation.icao24] ??= []);
 
-    if(insertionStatus.status == "accepted") history.splice(insertionStatus.insertAt, 0, observation);
-    if(insertionStatus.status == "flagged") flaggedHistory.push(observation)
+    if (insertionStatus.status == "accepted") history.splice(insertionStatus.insertAt, 0, observation);
+    if (insertionStatus.status == "flagged") flaggedHistory.push(observation);
 
-    return
-  
+    return;
 }
 
-export function validateFlightMovement(previousObservation: Observation | undefined, observation: Observation) {
-    if (!previousObservation) return true;
+export function validateFlightMovementWithNeighbour(neighbourObservation: Observation | undefined, observation: Observation) {
+    if (!neighbourObservation) return true;
 
     const observationDistance = haversineFormula(
-        { latitude: previousObservation.latitude, longitude: previousObservation.longitude },
+        { latitude: neighbourObservation.latitude, longitude: neighbourObservation.longitude },
         { latitude: observation.latitude, longitude: observation.longitude },
     );
 
-    const observationTimeDifference = observation.timestamp - previousObservation.timestamp;
+    const observationTimeDifference = observation.timestamp - neighbourObservation.timestamp;
+
+    if (observationTimeDifference <= 0) return false;
 
     const velocity = observationDistance / observationTimeDifference;
 
     if (velocity > MAX_SPEED_THRESHOLD) return false;
-    
+
     return true;
 }
 
@@ -136,4 +146,18 @@ export function haversineFormula(pointA: Coordinates, pointB: Coordinates) {
 
 function degToRad(deg: number) {
     return deg * (Math.PI / 180);
+}
+
+export function trackStatuses(trackedFlights: TrackedObservations, processingTime: number): FlightStatuses {
+    const flightStatuses: FlightStatuses = {};
+    for (const flight of Object.values(trackedFlights)) {
+        const latestFlight = flight[flight.length - 1];
+        if (flight.length == 0 || !latestFlight) continue;
+
+        const staleTimeDifference = processingTime - latestFlight.timestamp > STALE_THRESHOLD;
+
+        flightStatuses[latestFlight.icao24] = staleTimeDifference ? "STALE" : "ACTIVE";
+    }
+
+    return flightStatuses;
 }

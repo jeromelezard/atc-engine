@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { parseObservation } from "../utils";
+import { evaluateInsertion, haversineFormula, parseObservation, STALE_THRESHOLD, trackStatuses, validateFlightMovementWithNeighbour } from "../utils";
 import { trackObservations } from "../app";
 import { observations } from "../utils/observations";
 import { makeObservation } from "./helpers/makeObservation";
+
+const TEST_PROCESSING_TIME = 1_800_000_000;
+const trackAtTestTime = (input: unknown) => trackObservations(input, TEST_PROCESSING_TIME);
 
 export const sampleObservations = [
     makeObservation({ timestamp: 100 }),
@@ -51,7 +54,7 @@ describe("Observation Tests", () => {
     });
 
     it("valid observations should be in chronological order", () => {
-        const trackedFlights = trackObservations(observations).trackedFlights;
+        const trackedFlights = trackAtTestTime(observations).trackedFlights;
         expect(trackedFlights["40621D"]?.length).toBeGreaterThan(1);
         for (const flight of Object.values(trackedFlights)) {
             for (let i = 1; i < flight.length; i++) {
@@ -62,14 +65,14 @@ describe("Observation Tests", () => {
 
     it("should ensure out-of-order observation are actually retained", () => {
         const observations = [makeObservation({ timestamp: 100 }), makeObservation({ timestamp: 300 }), makeObservation({ timestamp: 200 })];
-        const trackedFlights = trackObservations(observations).trackedFlights;
+        const trackedFlights = trackAtTestTime(observations).trackedFlights;
         expect(trackedFlights["40621D"]?.length).toBe(3);
         const timestamps = trackedFlights["40621D"]?.map((observation) => observation.timestamp);
         expect(timestamps).toEqual([100, 200, 300]);
     });
 
     it("should detect duplicates", () => {
-        const trackedObservations = trackObservations(sampleObservations);
+        const trackedObservations = trackAtTestTime(sampleObservations);
         expect(trackedObservations.duplicateObservations["40621D"]?.length).toBe(1);
         expect(trackedObservations.trackedFlights["40621D"]?.length).toBe(5);
     });
@@ -79,21 +82,21 @@ describe("Observation Tests", () => {
             makeObservation({ timestamp: 100 }),
             makeObservation({ timestamp: 200 }),
             makeObservation({ timestamp: 300 }),
-            makeObservation({ timestamp: 200, latitude: 51.5, longitude: -0.5, }),
+            makeObservation({ timestamp: 200, latitude: 51.5, longitude: -0.5 }),
         ];
 
-        const trackedObservations = trackObservations(conflictingObservations);
+        const trackedObservations = trackAtTestTime(conflictingObservations);
 
         expect(trackedObservations.trackedFlights["40621D"]).toContainEqual(makeObservation({ timestamp: 200 }));
         expect(trackedObservations.trackedFlights["40621D"]).not.toContainEqual(makeObservation({ timestamp: 200, latitude: 51.5, longitude: -0.5 }));
 
         expect(trackedObservations.conflictingObservations["40621D"]).toContainEqual(
-            makeObservation({ timestamp: 200, latitude: 51.5, longitude: -0.5}),
+            makeObservation({ timestamp: 200, latitude: 51.5, longitude: -0.5 }),
         );
     });
 
     it("should return zeroes for empty input and not throw", () => {
-        const trackedObservations = trackObservations([]);
+        const trackedObservations = trackAtTestTime([]);
         expect(trackedObservations.trackedFlights).toMatchObject({});
         expect(trackedObservations.conflictingObservations).toMatchObject({});
         expect(trackedObservations.duplicateObservations).toMatchObject({});
@@ -109,7 +112,7 @@ describe("Observation Tests", () => {
             makeObservation({ timestamp: 400, heading: null, altitude: null, velocity: null }),
         ];
 
-        const trackedObservations = trackObservations(observations);
+        const trackedObservations = trackAtTestTime(observations);
         expect(trackedObservations.trackedFlights["40621D"]?.length).toBe(5);
     });
 
@@ -124,7 +127,7 @@ describe("Observation Tests", () => {
             { icao24: "", timestamp: 800, latitude: 51.47, longitude: -0.45 },
             { icao24: 123, timestamp: 900, latitude: 51.47, longitude: -0.45 },
         ];
-        const trackedObservations = trackObservations(observations);
+        const trackedObservations = trackAtTestTime(observations);
         expect(trackedObservations.trackedFlights["test"]?.length).toBe(2);
 
         const timestamps = trackedObservations.trackedFlights["test"]?.map((observation) => observation.timestamp);
@@ -151,40 +154,99 @@ describe("Observation Tests", () => {
     });
 
     it("should reject array of malformed inputs", () => {
-        const invalidObservations = trackObservations([null, [], 10, false, "test"]).invalidObservations;
+        const invalidObservations = trackAtTestTime([null, [], 10, false, "test"]).invalidObservations;
         expect(invalidObservations).toEqual([null, [], 10, false, "test"]);
+    });
+
+    it("should reject irregular speeds from next neighour", () => {
+        const history = [
+            makeObservation({ timestamp: 100, latitude: 51.47, longitude: -0.45 }),
+            makeObservation({ timestamp: 300, latitude: 51.49, longitude: -0.45 }),
+        ];
+
+        const incoming = makeObservation({ timestamp: 299, latitude: 51.47, longitude: -0.45 });
+
+        expect(evaluateInsertion(history, incoming)).toEqual({
+            status: "flagged",
+            reason: "implausible-speed",
+        });
+    });
+
+    it.each([
+        ["zero elapsed time", 200, 200],
+        ["negative elapsed time", 300, 200],
+    ])("%s is rejected", (_case, neighbourTime, observationTime) => {
+        const neighbour = makeObservation({ timestamp: neighbourTime });
+        const observation = makeObservation({ timestamp: observationTime });
+
+        expect(validateFlightMovementWithNeighbour(neighbour, observation)).toBe(false);
+    });
+
+    it("haversine equation should yield accurate result", () => {
+        const haversineDistance = haversineFormula({ latitude: 0, longitude: 0 }, { latitude: 0, longitude: 1 });
+        expect(haversineDistance).toBe(111195);
+    });
+
+    it("flagged observations should not appear in accepted history", () => {
+        const observations = [
+            makeObservation({ icao24: "40621D", timestamp: 100, latitude: 0, longitude: 0 }),
+            makeObservation({ icao24: "40621D", timestamp: 101, latitude: 0, longitude: 1 }),
+        ];
+
+        const trackedObservations = trackAtTestTime(observations);
+
+        expect(trackedObservations.trackedFlights["40621D"]).toContainEqual(
+            makeObservation({ icao24: "40621D", timestamp: 100, latitude: 0, longitude: 0 }),
+        );
+        expect(trackedObservations.flaggedObservations["40621D"]).toContainEqual(
+            makeObservation({ icao24: "40621D", timestamp: 101, latitude: 0, longitude: 1 }),
+        );
+    });
+
+    it("should reject irregular speed from previous neighbour", () => {
+        const history = [
+            makeObservation({ timestamp: 100, latitude: 0, longitude: 0 }),
+            makeObservation({ timestamp: 300, latitude: 0, longitude: 1.001 }),
+        ];
+        const incoming = makeObservation({ timestamp: 200, latitude: 0, longitude: 1 });
+
+        expect(validateFlightMovementWithNeighbour(incoming, history[1]!)).toBe(true);
+        expect(evaluateInsertion(history, incoming)).toEqual({
+            status: "flagged",
+            reason: "implausible-speed",
+        });
     });
 });
 
 describe("Multiple aircrafts observation tests", () => {
     it("should track multiple flights", () => {
         const multiAircraftObservations = [
-                // First aircraft — initial observation
-                makeObservation({ icao24: "40621D", timestamp: 100, latitude: 51.47, longitude: -0.45 }),
+            // First aircraft — initial observation
+            makeObservation({ icao24: "40621D", timestamp: 100, latitude: 51.47, longitude: -0.45 }),
 
-                // Second aircraft — initial observation
-                makeObservation({ icao24: "A1B2C3", timestamp: 100, latitude: 40, longitude: -70 }),
+            // Second aircraft — initial observation
+            makeObservation({ icao24: "A1B2C3", timestamp: 100, latitude: 40, longitude: -70 }),
 
-                // First aircraft — later observation
-                makeObservation({ icao24: "40621D", timestamp: 300, latitude: 51.51, longitude: -0.41 }),
+            // First aircraft — later observation
+            makeObservation({ icao24: "40621D", timestamp: 300, latitude: 51.51, longitude: -0.41 }),
 
-                // Second aircraft — later observation
-                makeObservation({ icao24: "A1B2C3", timestamp: 200, latitude: 40.02, longitude: -69.98 }),
+            // Second aircraft — later observation
+            makeObservation({ icao24: "A1B2C3", timestamp: 200, latitude: 40.02, longitude: -69.98 }),
 
-                // Delayed observation for the first aircraft
-                makeObservation({ icao24: "40621D", timestamp: 200, latitude: 51.49, longitude: -0.43 }),
+            // Delayed observation for the first aircraft
+            makeObservation({ icao24: "40621D", timestamp: 200, latitude: 51.49, longitude: -0.43 }),
 
-                // Exact duplicate for the second aircraft
-                makeObservation({ icao24: "A1B2C3", timestamp: 200, latitude: 40.02, longitude: -69.98 }),
+            // Exact duplicate for the second aircraft
+            makeObservation({ icao24: "A1B2C3", timestamp: 200, latitude: 40.02, longitude: -69.98 }),
 
-                // Same-aircraft timestamp conflict
-                // Different position, but same timestamp as an accepted observation
-                makeObservation({ icao24: "40621D", timestamp: 200, latitude: 51.50, longitude: -0.42 }),
+            // Same-aircraft timestamp conflict
+            // Different position, but same timestamp as an accepted observation
+            makeObservation({ icao24: "40621D", timestamp: 200, latitude: 51.5, longitude: -0.42 }),
 
-                // Delayed observation for the second aircraft
-                makeObservation({ icao24: "A1B2C3", timestamp: 150, latitude: 40.01, longitude: -69.99 }),
-            ];
-        const trackedObservations = trackObservations(multiAircraftObservations);
+            // Delayed observation for the second aircraft
+            makeObservation({ icao24: "A1B2C3", timestamp: 150, latitude: 40.01, longitude: -69.99 }),
+        ];
+        const trackedObservations = trackAtTestTime(multiAircraftObservations);
         const trackedFObservations = trackedObservations.trackedFlights;
         const duplicateObservations = trackedObservations.duplicateObservations;
         const conflictingObservations = trackedObservations.conflictingObservations;
@@ -200,5 +262,39 @@ describe("Multiple aircrafts observation tests", () => {
 
         expect(conflictingTimestamps).toEqual([200]);
         expect(duplicateTimestamps).toEqual([200]);
+    });
+});
+
+describe("Track staleness", () => {
+    it("should accurately set the status of stale aircrafts", () => {
+        const processingTime = 1000;
+        const statusCases = [
+            makeObservation({ icao24: "40621D", timestamp: 940 }), // age 60
+            makeObservation({ icao24: "A1B2C3", timestamp: 939 }), // age 61
+            makeObservation({ icao24: "D00D00", timestamp: 939, latitude: 0, longitude: 0 }),
+            makeObservation({ icao24: "D00D00", timestamp: 920, latitude: 0, longitude: 0 }), // delayed
+        ];
+
+        const tracked = trackObservations(statusCases, processingTime);
+
+        expect(tracked.flightStatuses).toMatchObject({
+            "40621D": "ACTIVE",
+            A1B2C3: "STALE",
+            D00D00: "STALE",
+        });
+    });
+
+    it("should set active status for recovered input", () => {
+        const processingTime = 1000;
+
+        const staleInput = [makeObservation({ icao24: "A1B2C3", timestamp: 939, latitude: 0, longitude: 0 })];
+
+        const recoveredInput = [...staleInput, makeObservation({ icao24: "A1B2C3", timestamp: 960, latitude: 0, longitude: 0 })];
+
+        const tracked = trackObservations(staleInput, processingTime);
+        const recoveredTracked = trackObservations(recoveredInput, processingTime);
+
+        expect(tracked.flightStatuses).toMatchObject({ A1B2C3: "STALE" });
+        expect(recoveredTracked.flightStatuses).toMatchObject({ A1B2C3: "ACTIVE" });
     });
 });
