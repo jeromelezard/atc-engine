@@ -1,6 +1,6 @@
-import { observations } from "./utils/observations";
+import { observations } from "./tests/fixtures/sampleObservations";
 import type { FlightStatuses, TrackedObservations } from "./types/observation";
-import { detectDuplicate, evaluateInsertion, parseObservation, STALE_THRESHOLD, track, trackStatuses } from "./utils";
+import { detectDuplicate, evaluateInsertion, parseObservation, insertObservation, trackStatuses } from "./utils/observations";
 
 const defaultProcessingTime = 1000;
 
@@ -15,6 +15,7 @@ export function trackObservations(rawObservations: unknown, processingTime: numb
     if (!Array.isArray(rawObservations)) {
         return { trackedFlights, invalidObservations, duplicateObservations, conflictingObservations, flaggedObservations, flightStatuses };
     }
+
     for (const raw of rawObservations) {
         const observation = parseObservation(raw);
         if (!observation) {
@@ -36,7 +37,7 @@ export function trackObservations(rawObservations: unknown, processingTime: numb
 
         const insertionStatus = evaluateInsertion(history, observation);
 
-        track(observation, history, flaggedObservations, insertionStatus);
+        insertObservation(observation, history, flaggedObservations, insertionStatus);
     }
 
     flightStatuses = trackStatuses(trackedFlights, processingTime);

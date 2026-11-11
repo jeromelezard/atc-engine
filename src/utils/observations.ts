@@ -1,205 +1,163 @@
-import type { Observation } from "../types/observation";
+import type { Coordinates, FlightStatuses, InsertionDecision, Observation, TrackedObservations } from "../types/observation";
 
-// export const observations: Observation[] = [
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793908800,
-//         latitude: 51.47,
-//         longitude: -0.4543,
-//         altitude: 10000,
-//         velocity: 230,
-//         heading: 90,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793908860,
-//         latitude: 51.49,
-//         longitude: -0.4,
-//         altitude: 10200,
-//         velocity: 235,
-//         heading: 75,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793908920,
-//         latitude: 51.52,
-//         longitude: -0.35,
-//         altitude: 10500,
-//         velocity: 240,
-//         heading: 60,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793908860,
-//         latitude: 51.49,
-//         longitude: -0.4,
-//         altitude: 10200,
-//         velocity: 235,
-//         heading: 75,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793908980,
-//         latitude: 51.55,
-//         longitude: -0.3,
-//         altitude: 10800,
-//         velocity: 245,
-//         heading: 50,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793908940,
-//         latitude: 51.535,
-//         longitude: -0.325,
-//         altitude: 10600,
-//         velocity: 242,
-//         heading: 55,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793909040,
-//         latitude: 51.58,
-//         longitude: -0.25,
-//         altitude: 11000,
-//         velocity: 250,
-//         heading: 45,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793909100,
-//         latitude: 91.0,
-//         longitude: -0.2,
-//         altitude: 11200,
-//         velocity: 250,
-//         heading: 45,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793909160,
-//         latitude: 51.62,
-//         longitude: -181.0,
-//         altitude: 11500,
-//         velocity: 255,
-//         heading: 40,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793909220,
-//         latitude: 51.65,
-//         longitude: -0.15,
-//         altitude: null,
-//         velocity: null,
-//         heading: null,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793909280,
-//         latitude: 51.68,
-//         longitude: -0.1,
-//         altitude: 11800,
-//         velocity: 260,
-//         heading: 35,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793909340,
-//         latitude: 51.71,
-//         longitude: -0.05,
-//         altitude: 12000,
-//         velocity: 265,
-//         heading: 30,
-//     },
-//     {
-//         icao24: "40621D",
-//         timestamp: 1793909220,
-//         latitude: 41.65,
-//         longitude: -1.15,
-//         altitude: 300,
-//         velocity: null,
-//         heading: null,
-//     },
-// ];
+const MAX_SPEED_THRESHOLD = 350;
+export const STALE_THRESHOLD = 60;
 
-export const observations: Observation[] = [
-    {
-        icao24: "40621D",
-        timestamp: 1793908800,
-        latitude: 51.47,
-        longitude: -0.45,
-        altitude: 10000,
-        velocity: 230,
-        heading: 90,
-    },
-    {
-        icao24: "40621D",
-        timestamp: 1793908860,
-        latitude: 51.48,
-        longitude: -0.4,
-        altitude: 10100,
-        velocity: 230,
-        heading: 90,
-    },
-    {
-        icao24: "40621D",
-        timestamp: 1793908980,
-        latitude: 51.5,
-        longitude: -0.3,
-        altitude: 10300,
-        velocity: 230,
-        heading: 90,
-    },
-    {
-        icao24: "40621D",
-        timestamp: 1793908920,
-        latitude: 51.49,
-        longitude: -0.35,
-        altitude: 10200,
-        velocity: 230,
-        heading: 90,
-    },
-    {
-        icao24: "40621D",
-        timestamp: 1793909040,
-        latitude: 55.0,
-        longitude: -0.25,
-        altitude: 10400,
-        velocity: 230,
-        heading: 90,
-    },
-    {
-        icao24: "40621D",
-        timestamp: 1793909100,
-        latitude: 51.52,
-        longitude: -0.2,
-        altitude: 10500,
-        velocity: 230,
-        heading: 90,
-    },
-    {
-        icao24: "40621D",
-        timestamp: 1793909160,
-        latitude: 51.54,
-        longitude: -0.15,
-        altitude: 10600,
-        velocity: 230,
-        heading: 90,
-    },
-    {
-        icao24: "40621D",
-        timestamp: 1793909159,
-        latitude: 51.52,
-        longitude: -0.2,
-        altitude: 10550,
-        velocity: 230,
-        heading: 90,
-    },
-    {
-        icao24: "40621D",
-        timestamp: 1793909070,
-        latitude: 51.0,
-        longitude: -5.0,
-        altitude: 10450,
-        velocity: 230,
-        heading: 90,
-    },
-];
+export function parseObservation(input: unknown): Observation | null {
+    if (input === null || typeof input !== "object" || Array.isArray(input)) {
+        return null;
+    }
+
+    const raw = input as Record<string, unknown>;
+
+    if (
+        "icao24" in raw &&
+        typeof raw.icao24 === "string" &&
+        raw.icao24.trim() !== "" &&
+        "timestamp" in raw &&
+        typeof raw.timestamp === "number" &&
+        Number.isFinite(raw.timestamp) &&
+        "latitude" in raw &&
+        typeof raw.latitude === "number" &&
+        Number.isFinite(raw.latitude) &&
+        "longitude" in raw &&
+        typeof raw.longitude === "number" &&
+        Number.isFinite(raw.longitude) &&
+        validLatitude(raw.latitude) &&
+        validLongitude(raw.longitude) &&
+        isNullableOrUndefinedFiniteNumber(raw.altitude) &&
+        isNullableOrUndefinedFiniteNumber(raw.velocity) &&
+        isNullableOrUndefinedFiniteNumber(raw.heading)
+    ) {
+        return {
+            icao24: raw.icao24,
+            timestamp: raw.timestamp,
+            latitude: raw.latitude,
+            longitude: raw.longitude,
+            altitude: raw.altitude ?? null,
+            velocity: raw.velocity ?? null,
+            heading: raw.heading ?? null,
+        };
+    }
+
+    return null;
+}
+function isNullableOrUndefinedFiniteNumber(value: unknown): value is number | null | undefined {
+    return value === null || value === undefined || (typeof value === "number" && Number.isFinite(value));
+}
+
+export function validateCoords(observation: Observation) {
+    return observation.latitude >= -90 && observation.latitude <= 90 && observation.longitude >= -180 && observation.longitude <= 180;
+}
+
+function validLatitude(latitude: number) {
+    return latitude >= -90 && latitude <= 90;
+}
+function validLongitude(longitude: number) {
+    return longitude >= -180 && longitude <= 180;
+}
+
+export function detectDuplicate(observation: Observation, trackedFlights: TrackedObservations) {
+    const { icao24, ...data } = observation;
+    const currentFlight = (trackedFlights[icao24] ??= []);
+
+    const isDuplicate = currentFlight.some(
+        (obs) =>
+            obs.timestamp === data.timestamp &&
+            obs.latitude === data.latitude &&
+            obs.longitude === data.longitude &&
+            obs.altitude === data.altitude &&
+            obs.velocity === data.velocity &&
+            obs.heading === data.heading,
+    );
+
+    return isDuplicate;
+}
+
+export function evaluateInsertion(history: readonly Observation[], observation: Observation): InsertionDecision {
+    if (history.length == 0) return { status: "accepted", insertAt: 0 };
+
+    const insertAt = history.findIndex((flight) => observation.timestamp < flight.timestamp);
+
+    const index = insertAt == -1 ? history.length : insertAt;
+
+    const previous = history[index - 1];
+    const next = history[index];
+    const validFromPrevious = !previous || validateFlightMovementWithNeighbour(previous, observation);
+
+    const validToNext = !next || validateFlightMovementWithNeighbour(observation, next);
+    if (validFromPrevious && validToNext) {
+        return { status: "accepted", insertAt: insertAt == -1 ? index : insertAt };
+    } else {
+        return { status: "flagged", reason: "implausible-speed" };
+    }
+}
+
+export function insertObservation(
+    observation: Observation,
+    history: Observation[],
+    flaggedObservations: TrackedObservations,
+    insertionStatus: InsertionDecision,
+): void {
+    const flaggedHistory = (flaggedObservations[observation.icao24] ??= []);
+
+    if (insertionStatus.status == "accepted") history.splice(insertionStatus.insertAt, 0, observation);
+    if (insertionStatus.status == "flagged") flaggedHistory.push(observation);
+
+    return;
+}
+
+export function validateFlightMovementWithNeighbour(neighbourObservation: Observation | undefined, observation: Observation) {
+    if (!neighbourObservation) return true;
+
+    const observationDistance = haversineFormula(
+        { latitude: neighbourObservation.latitude, longitude: neighbourObservation.longitude },
+        { latitude: observation.latitude, longitude: observation.longitude },
+    );
+
+    const observationTimeDifference = observation.timestamp - neighbourObservation.timestamp;
+
+    if (observationTimeDifference <= 0) return false;
+
+    const velocity = observationDistance / observationTimeDifference;
+
+    if (velocity > MAX_SPEED_THRESHOLD) return false;
+
+    return true;
+}
+
+export function haversineFormula(pointA: Coordinates, pointB: Coordinates) {
+    const r = 6371;
+
+    const distance =
+        2 *
+        r *
+        Math.asin(
+            Math.sqrt(
+                Math.sin(degToRad((pointB.latitude - pointA.latitude) / 2)) ** 2 +
+                    Math.cos(degToRad(pointA.latitude)) *
+                        Math.cos(degToRad(pointB.latitude)) *
+                        Math.sin(degToRad((pointB.longitude - pointA.longitude) / 2)) ** 2,
+            ),
+        );
+
+    return Math.round(distance * 1000);
+}
+
+function degToRad(deg: number) {
+    return deg * (Math.PI / 180);
+}
+
+export function trackStatuses(trackedFlights: TrackedObservations, processingTime: number): FlightStatuses {
+    const flightStatuses: FlightStatuses = {};
+    for (const flight of Object.values(trackedFlights)) {
+        const latestFlight = flight[flight.length - 1];
+        if (flight.length == 0 || !latestFlight) continue;
+
+        const staleTimeDifference = processingTime - latestFlight.timestamp > STALE_THRESHOLD;
+
+        flightStatuses[latestFlight.icao24] = staleTimeDifference ? "STALE" : "ACTIVE";
+    }
+
+    return flightStatuses;
+}
