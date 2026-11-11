@@ -166,10 +166,14 @@ describe("Observation Tests", () => {
 
         const incoming = makeObservation({ timestamp: 299, latitude: 51.47, longitude: -0.45 });
 
+        const trackedFLights = trackAtTestTime([...history, incoming]);
+
         expect(evaluateInsertion(history, incoming)).toEqual({
             status: "flagged",
             reason: "implausible-speed",
         });
+
+        expect(trackedFLights.trackedFlights["40621D"]).toEqual(history);
     });
 
     it.each([
