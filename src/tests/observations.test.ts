@@ -12,6 +12,8 @@ import { makeObservation } from "./helpers/makeObservation";
 import { observations } from "./fixtures/sampleObservations";
 import type { Coordinates } from "../types/observation";
 import { analyseTrack, getBearing } from "../utils/analyse";
+import type { JournalRecord } from "../types/persist";
+import { parseJournalRecord, serializeJournalRecord } from "../utils/persist";
 
 const TEST_PROCESSING_TIME = 1_800_000_000;
 const trackAtTestTime = (input: unknown) => trackObservations(input, TEST_PROCESSING_TIME);
@@ -381,5 +383,29 @@ describe("Track analysis tests", () => {
         const analysis = analyseTrack(track);
 
         expect(analysis[0]?.bearing).toBeNull();
+    });
+});
+
+describe("journal record", () => {
+    it("round-trips a record through serialization and parsing", () => {
+        const record: JournalRecord = {
+            version: 1,
+            processingTime: 1000,
+            observations: [
+                {
+                    icao24: "40621D",
+                    timestamp: 990,
+                    latitude: 51.5,
+                    longitude: -0.1,
+                    altitude: null,
+                    velocity: null,
+                    heading: null,
+                },
+            ],
+        };
+
+        const parsed = parseJournalRecord(serializeJournalRecord(record));
+
+        expect(parsed).toEqual(record);
     });
 });

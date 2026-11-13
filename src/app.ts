@@ -1,6 +1,7 @@
 import { observations } from "./tests/fixtures/sampleObservations";
 import type { FlightStatuses, TrackedObservations } from "./types/observation";
 import { detectDuplicate, evaluateInsertion, parseObservation, insertObservation, trackStatuses } from "./utils/observations";
+import { writeJournalRecord } from "./utils/persist";
 
 const defaultProcessingTime = 1000;
 
@@ -41,17 +42,26 @@ export function trackObservations(rawObservations: unknown, processingTime: numb
     }
 
     flightStatuses = trackStatuses(trackedFlights, processingTime);
+
     return { trackedFlights, invalidObservations, duplicateObservations, conflictingObservations, flaggedObservations, flightStatuses };
 }
 
-const result = trackObservations(observations, defaultProcessingTime);
-if (result) {
+async function main() {
+    const result = trackObservations(observations, defaultProcessingTime);
+
+    await writeJournalRecord({
+        version: 1,
+        processingTime: defaultProcessingTime,
+        observations,
+    });
+    console.log("Journal batch saved to output/trackedObservations.jsonl");
+
     console.log("Tracked Flights:", result.trackedFlights["40621D"]?.length ?? 0);
-    console.log("Invalid Observations:", result.invalidObservations.length ?? 0);
+    console.log("Invalid Observations:", result.invalidObservations.length);
     console.log("Duplicate Observations:", result.duplicateObservations["40621D"]?.length ?? 0);
     console.log("Conflicting Observations:", result.conflictingObservations["40621D"]?.length ?? 0);
     console.log("Flagged Observations:", result.flaggedObservations["40621D"]?.length ?? 0);
     console.log("Flight statuses:", result.flightStatuses);
-} else {
-    console.log("Invalid input");
 }
+
+void main();
